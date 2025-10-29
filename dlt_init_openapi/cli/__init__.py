@@ -4,7 +4,6 @@ from typing import Any, Optional
 
 import questionary
 import typer
-from dlt.cli import utils
 from loguru import logger
 
 from dlt_init_openapi.cli.cli_endpoint_selection import questionary_endpoint_selection
@@ -12,6 +11,17 @@ from dlt_init_openapi.config import Config
 from dlt_init_openapi.exceptions import DltOpenAPITerminalException
 
 app = typer.Typer(add_completion=False)
+
+# Fallback decorator if dlt.cli.utils is not available
+try:
+    from dlt.cli import utils
+    track_command = utils.track_command
+except (ImportError, AttributeError):
+    # Create a no-op decorator if dlt.cli.utils is not available
+    def track_command(command_name, *args, **kwargs):
+        def decorator(func):
+            return func
+        return decorator
 
 
 def _print_version(value: bool) -> None:
@@ -66,7 +76,7 @@ def init(
     )
 
 
-@utils.track_command("init-openapi", False, "source", "url", "path")
+@track_command("init-openapi", False, "source", "url", "path")
 def _init_command_wrapped(
     source: str,
     url: Optional[str] = None,
