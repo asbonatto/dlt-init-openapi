@@ -60,6 +60,7 @@ def {{ source_name }}(
                 "data_selector": "{{ endpoint.data_json_path }}",
                 {% endif %}
                 "path": "{{endpoint.path }}",
+                "method": "{{endpoint.method}}",
                 {% if endpoint.transformer or endpoint.unresolvable_path_param_names or endpoint.unresolvable_query_params %}
                 "params": {
                     {% if endpoint.transformer %}
