@@ -208,6 +208,9 @@ class SchemaWrapper:
         array_item: Optional["SchemaWrapper"] = None
         if schema.items:
             array_item = cls.from_reference_guarded(schema.items, context, level=level)
+            # If this is an array schema without a name, use the array item's name
+            if not name and array_item and array_item.name:
+                name = array_item.name
 
         # Single type in OAI 3.0, list of types in 3.1
         # Nullable does not exist in 3.1, instead types: ["string", "null"]
