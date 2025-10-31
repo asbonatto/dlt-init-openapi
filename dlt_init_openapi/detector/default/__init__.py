@@ -132,6 +132,72 @@ class DefaultDetector(BaseDetector):
             if global_scheme.supported:
                 open_api.detected_global_security_scheme = global_scheme
 
+    def _get_request_body_schema_name(self, endpoint: Endpoint) -> Optional[str]:
+        """
+        Extract schema name from request body for POST/PUT/PATCH endpoints.
+        
+        For APIs where POST endpoints return generic responses, the actual 
+        endpoint type is identified by the request body schema.
+        """
+        if not endpoint.osp_operation.requestBody:
+            return None
+        
+        request_body = endpoint.osp_operation.requestBody
+        
+        # The request body could be a Reference or a RequestBody object
+        # We need to handle it carefully without using osp types
+        
+        # Check if it has a 'ref' attribute (it's a reference)
+        if hasattr(request_body, 'ref') and request_body.ref:
+            ref_path = request_body.ref.split('/')
+            if len(ref_path) > 0:
+                return self._clean_schema_name(ref_path[-1])
+        
+        # Check if it has 'content' (it's an inline RequestBody)
+        if hasattr(request_body, 'content') and request_body.content:
+            # Try different content types
+            for content_type in ['application/json', 'application/json-patch+json', 'text/json', 'application/*+json']:
+                if content_type in request_body.content:
+                    media_type = request_body.content[content_type]
+                    
+                    # Get the schema from media_type_schema
+                    if hasattr(media_type, 'media_type_schema') and media_type.media_type_schema:
+                        schema = media_type.media_type_schema
+                        
+                        # Check if schema has a ref
+                        if hasattr(schema, 'ref') and schema.ref:
+                            ref_path = schema.ref.split('/')
+                            if len(ref_path) > 0:
+                                return self._clean_schema_name(ref_path[-1])
+                    break
+        
+        return None
+
+    def _clean_schema_name(self, schema_name: str) -> str:
+        """
+        Clean up complex schema names by removing namespaces and extracting 
+        the meaningful part.
+        
+        Example:
+        Input:  Domain.Entity.Contracts.Reports.ReportContract_1_...AveragePriceTradesReportContract_
+        Output: AveragePriceTradesReportContract
+        """
+        # Remove common namespace prefixes
+        prefixes = ['Domain.Entity.Contracts.', 'Reports.', 'OnShore.', 'OffShore.']
+        for prefix in prefixes:
+            schema_name = schema_name.replace(prefix, '')
+        
+        # Handle generic type patterns like ReportContract_1_SomethingContract_
+        # Extract the last meaningful part after _1_
+        if '_1_' in schema_name:
+            parts = schema_name.split('_1_')
+            schema_name = parts[-1]
+        
+        # Remove trailing underscores
+        schema_name = schema_name.rstrip('_')
+        
+        return schema_name
+
     def detect_resource_names(self, endpoints: EndpointCollection) -> None:
         """iterate all endpoints and find a strategy to select the right resource name"""
 
@@ -141,8 +207,16 @@ class DefaultDetector(BaseDetector):
 
         # best strategy is to use the entity name as resource name
         for endpoint in endpoints.endpoints:
-            # try to use the name of the payload
-            name = endpoint.payload.name if endpoint.payload else None
+            name = None
+            
+            # NEW: For POST/PUT/PATCH, try request body schema first
+            if endpoint.method in ["POST", "PUT", "PATCH"]:
+                name = self._get_request_body_schema_name(endpoint)
+            
+            # Fall back to response payload (original logic)
+            if not name:
+                name = endpoint.payload.name if endpoint.payload else None
+                
             # try to use the singularized last path element
             if not name:
                 parts = get_non_var_path_parts(endpoint.path)
@@ -196,6 +270,8 @@ class DefaultDetector(BaseDetector):
                 parent_property=DataPropertyPath((input_prop.name,), input_prop.schema),
                 path_parameter_name=param_name,
             )
+
+    
 
     def detect_paginators_and_responses(self, endpoints: EndpointCollection) -> None:
         # iterate over endpoints and detect response and pagination settings
