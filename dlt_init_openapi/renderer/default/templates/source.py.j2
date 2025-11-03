@@ -61,6 +61,41 @@ def {{ source_name }}(
                 {% endif %}
                 "path": "{{endpoint.path }}",
                 "method": "{{endpoint.method}}",
+                {% if endpoint.request_body_params %}
+                "json": {
+                    {% for param in endpoint.request_body_params %}
+                    {% if param.required %}
+                    "{{param.name}}": {% if param.nested_properties %}{
+                        {% for nested_param in param.nested_properties %}
+                        {% if nested_param.required %}
+                        "{{nested_param.name}}": "{{ nested_param.get_default_value(config) }}",  # TODO: fill in required value{% if nested_param.format %} ({{nested_param.format}}){% endif %}
+
+                        {% endif %}
+                        {% endfor %}
+                    }{% else %}"{{ param.get_default_value(config) }}"{% endif %},  # TODO: fill in required value{% if param.format %} ({{param.format}}){% endif %}
+
+                    {% endif %}
+                    {% endfor %}
+                    {% set has_optional = namespace(value=false) %}
+                    {% for param in endpoint.request_body_params %}
+                    {% if not param.required %}
+                    {% set has_optional.value = true %}
+                    {% endif %}
+                    {% endfor %}
+                    {% if has_optional.value %}
+                    # the parameters below can optionally be configured
+                    {% for param in endpoint.request_body_params %}
+                    {% if not param.required %}
+                    # "{{param.name}}": {% if param.nested_properties %}{
+                        {% for nested_param in param.nested_properties %}
+                        # "{{nested_param.name}}": "{{ nested_param.get_default_value(config) }}",
+                        {% endfor %}
+                    # }{% else %}"{{ param.get_default_value(config) }}"{% endif %},
+                    {% endif %}
+                    {% endfor %}
+                    {% endif %}
+                },
+                {% endif %}
                 {% if endpoint.transformer or endpoint.unresolvable_path_param_names or endpoint.unresolvable_query_params %}
                 "params": {
                     {% if endpoint.transformer %}
@@ -109,4 +144,3 @@ def {{ source_name }}(
     }
 
     return rest_api_source(source_config)
-

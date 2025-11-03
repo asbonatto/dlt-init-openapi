@@ -75,3 +75,17 @@ class OpenapiContext:
         if isinstance(ref, osp.Parameter):
             return ref
         return osp.Parameter.parse_obj(self._component_from_reference(ref))
+
+    def request_body_from_reference(self, ref: Union[osp.Reference, osp.RequestBody]) -> osp.RequestBody:
+        """
+        Resolve a request body reference to an actual RequestBody object.
+        
+        Args:
+            ref: Either a Reference object or a RequestBody object
+            
+        Returns:
+            The resolved RequestBody object
+        """
+        if isinstance(ref, osp.RequestBody):
+            return ref
+        return osp.RequestBody.parse_obj(self._component_from_reference(ref))

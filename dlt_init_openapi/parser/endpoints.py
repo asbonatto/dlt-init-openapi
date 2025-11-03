@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Dict, List, Literal, Optional, Set, Union, cast
+from typing import Any, Dict, List, Literal, Optional, Set, Union, cast
 
 import openapi_schema_pydantic as osp
 from loguru import logger
 
+from dlt_init_openapi.parser.config import Config
 from dlt_init_openapi.parser.context import OpenapiContext
 from dlt_init_openapi.parser.models import DataPropertyPath, SchemaWrapper
 from dlt_init_openapi.parser.pagination import Pagination
@@ -34,6 +35,24 @@ class Response:
     # detected values
     detected_payload: Optional[DataPropertyPath] = None
     detected_primary_key: Optional[str] = None
+
+
+@dataclass
+class RequestBodyParam:
+    """Represents a parameter in the request body"""
+    name: str
+    type: str
+    format: Optional[str]
+    required: bool
+    description: Optional[str]
+    default: Optional[Any]
+    nested_properties: Optional[List['RequestBodyParam']]
+    
+    def get_default_value(self, config: Config) -> str:
+        """Get the default value string for rendering"""
+        if self.required:
+            return config.required_parameter_default_value
+        return config.unrequired_parameter_default_value
 
 
 @dataclass()
@@ -159,6 +178,86 @@ class Endpoint:
         if not description:
             return None
         return description.replace("\n", " ")
+
+    @property
+    def request_body_schema(self) -> Optional[SchemaWrapper]:
+        """
+        Extract the schema for the request body (for POST/PUT/PATCH).
+        Returns None if no request body or not a mutation method.
+        """
+        if self.method not in ["POST", "PUT", "PATCH"]:
+            return None
+        
+        if not self.osp_operation.requestBody:
+            return None
+        
+        request_body = self.osp_operation.requestBody
+        
+        # Handle reference
+        if hasattr(request_body, 'ref') and request_body.ref:
+            request_body = self.context.request_body_from_reference(request_body)
+        
+        # Get JSON content
+        if hasattr(request_body, 'content') and request_body.content:
+            for content_type in ['application/json', 'application/json-patch+json', 'text/json', 'application/*+json']:
+                if content_type in request_body.content:
+                    media_type = request_body.content[content_type]
+                    if hasattr(media_type, 'media_type_schema') and media_type.media_type_schema:
+                        return SchemaWrapper.from_reference(
+                            media_type.media_type_schema,
+                            self.context
+                        )
+        
+        return None
+
+    @property
+    def request_body_params(self) -> Optional[List[RequestBodyParam]]:
+        """
+        Extract request body parameters as a flat or nested structure.
+        """
+        schema = self.request_body_schema
+        if not schema:
+            return None
+        
+        # Get required fields from the schema
+        required_fields = schema.osp_schema.required or []
+        
+        return self._extract_params_from_schema(schema, required_fields)
+
+    def _extract_params_from_schema(
+        self, 
+        schema: SchemaWrapper, 
+        required_fields: Optional[List[str]] = None
+    ) -> List[RequestBodyParam]:
+        """Recursively extract parameters from a schema"""
+        params = []
+        
+        if required_fields is None:
+            required_fields = []
+        
+        for prop in schema.properties:
+            is_required = prop.name in required_fields
+            
+            # Handle nested objects
+            nested = None
+            if prop.schema.is_object and prop.schema.properties:
+                nested = self._extract_params_from_schema(
+                    prop.schema,
+                    prop.schema.osp_schema.required or []
+                )
+            
+            param = RequestBodyParam(
+                name=prop.name,
+                type=prop.schema.types[0] if prop.schema.types else "unknown",
+                format=prop.schema.type_format,
+                required=is_required,
+                description=prop.schema.description,
+                default=prop.schema.default,
+                nested_properties=nested
+            )
+            params.append(param)
+        
+        return params
 
     @classmethod
     def from_operation(
