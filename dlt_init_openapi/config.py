@@ -26,8 +26,12 @@ class Config(BaseModel):
         "black .",
     ]
     """Commands to run after code generation"""
-    include_methods: List[str] = ["get"]
+    include_methods: List[str] = ["get", "post", "put", "patch", "delete", "head", "options", "trace"]
     """HTTP methods to render from OpenAPI spec"""
+    generate_dlt_sources: bool = True
+    """Generate @dlt.source functions instead of REST API config"""
+    dlt_sources_filename: str = "sources.py"
+    """Filename for generated dlt sources"""
     fallback_openapi_title: str = "openapi"
     """Fallback title when openapi info.title is missing or empty"""
     project_folder_suffix: str = "_pipeline"

@@ -12,6 +12,8 @@ from dlt_init_openapi.config import Config
 from dlt_init_openapi.parser.openapi_parser import OpenapiParser
 from dlt_init_openapi.renderer.base_renderer import BaseRenderer
 from dlt_init_openapi.utils import misc
+from dlt_init_openapi.utils.dlt_source_generator import DltSourceGenerator
+
 
 FILE_ENCODING = "utf-8"
 TEMPLATE_FILTERS = {
@@ -65,6 +67,7 @@ class DefaultRenderer(BaseRenderer):
         self._build_source()
         self._build_pipeline()
         self._build_meta_files()
+        self._build_dlt_sources()
         self._run_post_hooks()
 
     def _build_meta_files(self) -> None:
@@ -171,3 +174,31 @@ class DefaultRenderer(BaseRenderer):
             subprocess.run(cmd, cwd=cwd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
         except subprocess.CalledProcessError as err:
             raise RuntimeError("{}failed\n{}".format(cmd_name, err.stderr.decode() or err.output.decode())) from err
+        
+    
+    def _build_dlt_sources(self) -> None:
+        """Generate dlt source functions if configured"""
+        if not self.config.generate_dlt_sources:
+            return
+        
+        logger.info("Generating dlt source functions...")
+        
+        generator = DltSourceGenerator()
+        endpoints = self.openapi.endpoints.all_endpoints_to_render
+        
+        if not endpoints:
+            logger.warning("No endpoints to generate dlt sources for")
+            return
+        
+        # Extract base URL from OpenAPI spec
+        base_url = None
+        if self.openapi.info.servers and self.openapi.info.servers[0].url:
+            base_url = self.openapi.info.servers[0].url
+        
+        sources_code = generator.generate_all_sources(endpoints, base_url=base_url)
+        
+        sources_path = self.package_dir / self.config.dlt_sources_filename
+        sources_path.write_text(sources_code, encoding=FILE_ENCODING)
+        
+        logger.success(f"Generated dlt sources: {sources_path}")
+        logger.info(f"Created {len(endpoints)} dlt source function(s)")
